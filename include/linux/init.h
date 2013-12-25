@@ -151,6 +151,7 @@ extern char __initdata boot_command_line[];
 extern char *saved_command_line;
 extern unsigned int reset_devices;
 
+
 /* used by init/main.c */
 void setup_arch(char **);
 void prepare_namespace(void);

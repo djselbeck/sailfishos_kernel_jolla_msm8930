@@ -129,6 +129,7 @@ PANIC_LOG_INIT(cmdline, "cmdline", boot_command_line, LOGTYPE_RAW);
 
 /* Untouched saved command line (eg. for /proc) */
 char *saved_command_line;
+EXPORT_SYMBOL(saved_command_line);
 /* Command line for parameter parsing */
 static char *static_command_line;
 
