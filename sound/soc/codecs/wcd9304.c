@@ -217,6 +217,7 @@ enum sitar_mbhc_plug_type {
 	PLUG_TYPE_HEADSET,
 	PLUG_TYPE_HEADPHONE,
 	PLUG_TYPE_HIGH_HPH,
+	PLUG_TYPE_OMTP_HEADSET,
 };
 
 enum sitar_mbhc_state {
@@ -318,6 +319,7 @@ struct sitar_priv {
 
 	bool gpio_irq_resend;
 	struct wake_lock irq_resend_wlock;
+	struct wake_lock irq_report_wlock;
 
 /* Jen Chang add for reading chip id */
 	u32 chipid;
@@ -1932,6 +1934,7 @@ static void sitar_snd_soc_jack_report(struct sitar_priv *sitar,
 				     int mask)
 {
 	/* XXX: wake_lock_timeout()? */
+	wake_lock_timeout(&sitar->irq_report_wlock, 3 * HZ);
     sndprintk(SND_DLL_DEBUG, "status %d mast %d\n", status, mask);
 	snd_soc_jack_report_no_dapm(jack, status, mask);
 }
@@ -4199,6 +4202,8 @@ static bool sitar_codec_is_invalid_plug(struct snd_soc_codec *codec,
 	for (i = 0 ; i < MBHC_NUM_DCE_PLUG_DETECT && !r; i++) {
 		if (mic_mv[i] < plug_type_ptr->v_no_mic)
 			plug_type[i] = PLUG_TYPE_HEADPHONE;
+		else if (mic_mv[i] < plug_type_ptr->v_omtp_max)
+			plug_type[i] = PLUG_TYPE_OMTP_HEADSET;
 		else if (mic_mv[i] < plug_type_ptr->v_hs_max)
 			plug_type[i] = PLUG_TYPE_HEADSET;
 		else if (mic_mv[i] > plug_type_ptr->v_hs_max)
@@ -4418,6 +4423,11 @@ static void sitar_codec_decide_gpio_plug(struct snd_soc_codec *codec)
 		mbhc_debug_printk(SND_DLL_INFO, "%s: Valid plug found, determine plug type\n",
 			 __func__);
 		sitar_find_plug_and_report(codec, plug_type[0]);
+	} else if (plug_type[0] == PLUG_TYPE_OMTP_HEADSET) {
+		mbhc_debug_printk(SND_DLL_INFO, "%s: Valid plug found, determine plug type OMTP Headset\n",
+			 __func__);
+		sitar_codec_report_plug(codec, 1, SND_JACK_HEADPHONE);
+		sitar_schedule_hs_detect_plug(sitar);
 	}
     else if (plug_type[0] == PLUG_TYPE_HIGH_HPH)
     {
@@ -5645,6 +5655,9 @@ static int sitar_codec_probe(struct snd_soc_codec *codec)
 		init_waitqueue_head(&sitar->dai[i].dai_wait);
 	}
 
+	wake_lock_init(&sitar->irq_report_wlock, WAKE_LOCK_SUSPEND,
+			"sitar_headset_report");
+
 /* Jen Chang add for reading chip id */
 	sitar_id = snd_soc_read(codec, WCD9XXX_A_CHIP_ID_BYTE_0);
 	sndprintk(SND_DLL_DEBUG, "%s : reg(0x%x) %d\n", __func__, WCD9XXX_A_CHIP_ID_BYTE_0, sitar_id);
@@ -5717,6 +5730,7 @@ static int sitar_codec_remove(struct snd_soc_codec *codec)
 	struct sitar_priv *sitar = snd_soc_codec_get_drvdata(codec);
 
 	wake_lock_destroy(&sitar->irq_resend_wlock);
+	wake_lock_destroy(&sitar->irq_report_wlock);
 
 	wcd9xxx_free_irq(codec->control_data, SITAR_IRQ_SLIMBUS, sitar);
 	wcd9xxx_free_irq(codec->control_data, SITAR_IRQ_MBHC_RELEASE, sitar);
